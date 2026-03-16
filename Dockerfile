@@ -19,12 +19,17 @@ ENV PATH="/root/.local/bin:$PATH"
 WORKDIR /build
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies with GPU (CUDA 12.8) extras
+# Install dependencies with GPU (CUDA 12.8) extras into a venv
 RUN uv venv /opt/venv && \
     VIRTUAL_ENV=/opt/venv uv sync --extra gpu --no-dev --no-install-project
 
-# Put the venv on PATH so python/pip resolve to it
+# Activate venv: put it first on PATH and symlink python for compatibility
 ENV PATH="/opt/venv/bin:$PATH"
 ENV VIRTUAL_ENV="/opt/venv"
+# Ensure `python` command exists (Ubuntu 22.04 only ships `python3`)
+RUN ln -sf /opt/venv/bin/python3 /opt/venv/bin/python 2>/dev/null || true
+
+# Verify key dependencies are installed
+RUN python -c "import torch; import requests; import mlflow; print(f'torch={torch.__version__}, requests OK, mlflow={mlflow.__version__}')"
 
 WORKDIR /workspace
