@@ -27,7 +27,10 @@ ENV PATH="/build/.venv/bin:$PATH"
 ENV VIRTUAL_ENV="/build/.venv"
 RUN ln -sf /usr/bin/python3 /build/.venv/bin/python
 
+# Ensure PyTorch's bundled CUDA libs are on LD_LIBRARY_PATH (needed by torch.compile / Triton)
+ENV LD_LIBRARY_PATH="/build/.venv/lib/python3.10/site-packages/torch/lib:/build/.venv/lib/python3.10/site-packages/nvidia/cuda_runtime/lib:${LD_LIBRARY_PATH}"
+
 # Verify key dependencies are installed
-RUN /build/.venv/bin/python -c "import torch; import requests; import mlflow; print(f'torch={torch.__version__}, requests OK, mlflow={mlflow.__version__}')"
+RUN /build/.venv/bin/python -c "import torch; import requests; import mlflow; print(f'torch={torch.__version__}, cuda={torch.version.cuda}, requests OK, mlflow={mlflow.__version__}')"
 
 WORKDIR /workspace
