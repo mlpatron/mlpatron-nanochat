@@ -23,14 +23,13 @@ COPY pyproject.toml uv.lock ./
 RUN uv venv /opt/venv && \
     VIRTUAL_ENV=/opt/venv uv sync --extra gpu --no-dev --no-install-project
 
-# Activate venv via PATH
+# Activate venv via PATH and create `python` symlink
+# (Ubuntu 22.04 only ships `python3`, no `python`)
 ENV PATH="/opt/venv/bin:$PATH"
 ENV VIRTUAL_ENV="/opt/venv"
-
-# Ensure `python` command exists (Ubuntu 22.04 only ships `python3`)
-RUN ln -sf $(which python3) /opt/venv/bin/python
+RUN ln -sf /opt/venv/bin/python3 /opt/venv/bin/python
 
 # Verify key dependencies are installed
-RUN python -c "import torch; import requests; import mlflow; print(f'torch={torch.__version__}, requests OK, mlflow={mlflow.__version__}')"
+RUN /opt/venv/bin/python -c "import torch; import requests; import mlflow; print(f'torch={torch.__version__}, requests OK, mlflow={mlflow.__version__}')"
 
 WORKDIR /workspace
