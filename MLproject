@@ -1,0 +1,55 @@
+name: nanochat
+
+docker_env:
+  image: ghcr.io/nblintao/mlpatron-nanochat:latest
+
+# ---------------------------------------------------------------------------
+# Preset for 1×A100 40GB (~50M params, ~30min, ~$2)
+#
+# Key relationships:
+#   total_tokens = total_batch_size × num_iterations
+#   total_batch_size is auto-computed by nanochat from depth (~128K–262K for d6)
+#   Each data shard ≈ 60M tokens; dataloader loops if data runs out (multi-epoch)
+#
+# Dryrun: MLPatron auto-detects "num_iterations" and suggests
+#   dryrun_override_param=num_iterations, dryrun_override_value=10
+#   which completes in ~1 min for quick validation.
+#
+# Hardcoded flags:
+#   --window-pattern L       full-context attention (sliding window needs FA3 / Hopper)
+#   --core-metric-every -1   skip CORE eval (slow, not needed for short runs)
+#   --sample-every -1        skip text generation sampling
+# ---------------------------------------------------------------------------
+
+entry_points:
+  a100_preset:
+    parameters:
+      depth:
+        type: int
+        default: 6              # ~50M params, fits in A100 40GB VRAM
+      num_iterations:
+        type: int
+        default: 500            # ~65M–131M tokens (depends on auto batch size)
+      device_batch_size:
+        type: int
+        default: 16             # upstream default=32 may OOM on 40GB; 16 is safe
+      max_seq_len:
+        type: int
+        default: 2048           # same as upstream default
+      num_data_shards:
+        type: int
+        default: 8              # ~480M tokens, well above what 500 iters need (~131M)
+      eval_every:
+        type: int
+        default: 50             # gives ~10 validation data points over 500 steps
+    command: >
+      python -m nanochat.dataset -n {num_data_shards} &&
+      python -m scripts.base_train
+      --depth {depth}
+      --num-iterations {num_iterations}
+      --device-batch-size {device_batch_size}
+      --max-seq-len {max_seq_len}
+      --eval-every {eval_every}
+      --window-pattern L
+      --core-metric-every -1
+      --sample-every -1

@@ -25,6 +25,12 @@ import wandb
 import torch
 import torch.distributed as dist
 
+# ---------------------------------------------------------------------------
+# MLflow integration (activated when MLFLOW_TRACKING_URI is set, e.g. on MLPatron)
+import mlflow
+_USE_MLFLOW = bool(os.environ.get("MLFLOW_TRACKING_URI"))
+# ---------------------------------------------------------------------------
+
 from nanochat.gpt import GPT, GPTConfig, Linear
 from nanochat.dataloader import tokenizing_distributed_data_loader_bos_bestfit, tokenizing_distributed_data_loader_with_state_bos_bestfit
 from nanochat.common import compute_init, compute_cleanup, print0, DummyWandb, print_banner, get_base_dir, autodetect_device_type, get_peak_flops, COMPUTE_DTYPE, COMPUTE_DTYPE_REASON, is_ddp_initialized
@@ -95,9 +101,19 @@ else:
     gpu_peak_flops = float('inf')  # MFU not meaningful for CPU/MPS
 print0(f"COMPUTE_DTYPE: {COMPUTE_DTYPE} ({COMPUTE_DTYPE_REASON})")
 
-# wandb logging init
-use_dummy_wandb = args.run == "dummy" or not master_process
+# wandb logging init (disable wandb when running on MLPatron)
+if _USE_MLFLOW and args.run == "dummy":
+    use_dummy_wandb = True
+else:
+    use_dummy_wandb = args.run == "dummy" or not master_process
 wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(project="nanochat", name=args.run, config=user_config)
+
+# MLflow logging init (only on master process)
+if _USE_MLFLOW and master_process:
+    mlflow.start_run(run_id=os.environ.get("MLFLOW_RUN_ID"))
+    mlflow.log_params({k: v for k, v in user_config.items() if v is not None})
+else:
+    _USE_MLFLOW = False  # disable on non-master ranks
 
 # Flash Attention status
 from nanochat.flash_attention import USE_FA3
@@ -432,6 +448,8 @@ while True:
             "total_training_time": total_training_time,
             "val/bpb": val_bpb,
         })
+        if _USE_MLFLOW:
+            mlflow.log_metrics({"val_bpb": val_bpb, "total_training_time": total_training_time}, step=step)
         model.train()
 
     # once in a while: estimate the CORE metric (all ranks participate)
@@ -449,6 +467,8 @@ while True:
             "core_metric": results["core_metric"],
             "centered_results": results["centered_results"],
         })
+        if _USE_MLFLOW:
+            mlflow.log_metrics({"core_metric": results["core_metric"]}, step=step)
         model.train()
 
     # once in a while: sample from the model (only on master process)
@@ -577,6 +597,12 @@ while True:
             "train/epoch": epoch,
         }
         wandb_run.log(log_data)
+        if _USE_MLFLOW:
+            mlflow.log_metrics({
+                "train_loss": debiased_smooth_loss,
+                "train_tok_per_sec": tok_per_sec,
+                "train_mfu": mfu,
+            }, step=step)
 
     # state update
     first_step_of_run = (step == 0) or (resuming and step == args.resume_from_step)
@@ -625,5 +651,15 @@ get_report().log(section="Base model training", data=[
 ])
 
 # cleanup
+if _USE_MLFLOW:
+    # Log final summary metrics
+    final_metrics = {"num_params": num_params, "total_training_time_min": total_training_time / 60}
+    if val_bpb is not None:
+        final_metrics["min_val_bpb"] = min_val_bpb
+        final_metrics["final_val_bpb"] = val_bpb
+    if "core_metric" in results:
+        final_metrics["final_core_metric"] = results["core_metric"]
+    mlflow.log_metrics(final_metrics, step=num_iterations)
+    mlflow.end_run()
 wandb_run.finish() # wandb run finish
 compute_cleanup()
