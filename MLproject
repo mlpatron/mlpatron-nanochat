@@ -44,7 +44,7 @@ entry_points:
         default: 50             # gives ~10 validation data points over 500 steps
     command: >-
       python -m nanochat.dataset -n {num_data_shards} &&
-      python -m scripts.tok_train &&
+      python -m scripts.tok_train --max-chars 200000000 &&
       python -m scripts.base_train
       --depth {depth}
       --num-iterations {num_iterations}
