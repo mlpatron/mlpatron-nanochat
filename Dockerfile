@@ -23,12 +23,14 @@ COPY pyproject.toml uv.lock ./
 RUN uv venv && uv sync --extra gpu --no-dev --no-install-project
 
 # Put venv on PATH; create `python` command (Ubuntu 22.04 only has `python3`)
-ENV PATH="/build/.venv/bin:$PATH"
+ENV PATH="/build/.venv/bin:/usr/local/nvidia/bin:$PATH"
 ENV VIRTUAL_ENV="/build/.venv"
 RUN ln -sf /usr/bin/python3 /build/.venv/bin/python
 
-# Ensure PyTorch's bundled CUDA libs are on LD_LIBRARY_PATH (needed by torch.compile / Triton)
-ENV LD_LIBRARY_PATH="/build/.venv/lib/python3.10/site-packages/torch/lib:/build/.venv/lib/python3.10/site-packages/nvidia/cuda_runtime/lib:${LD_LIBRARY_PATH}"
+# Ensure CUDA libs are discoverable at runtime:
+# - /usr/local/nvidia/lib64: GKE-injected GPU driver (libcuda.so)
+# - nvidia/cuda_runtime/lib: PyTorch's bundled CUDA runtime (libcudart.so)
+ENV LD_LIBRARY_PATH="/usr/local/nvidia/lib64:/build/.venv/lib/python3.10/site-packages/nvidia/cuda_runtime/lib:${LD_LIBRARY_PATH}"
 
 # Verify key dependencies are installed
 RUN /build/.venv/bin/python -c "import torch; import requests; import mlflow; print(f'torch={torch.__version__}, cuda={torch.version.cuda}, requests OK, mlflow={mlflow.__version__}')"
