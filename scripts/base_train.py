@@ -115,7 +115,7 @@ if _USE_MLFLOW and master_process:
     # Log GPU info if available
     if device_type == "cuda":
         mlflow.log_param("gpu_name", torch.cuda.get_device_name(0))
-        mlflow.log_param("gpu_memory_gb", round(torch.cuda.get_device_properties(0).total_mem / 1024**3, 1))
+        mlflow.log_param("gpu_memory_gb", round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 1))
 else:
     _USE_MLFLOW = False  # disable on non-master ranks
 
