@@ -469,7 +469,10 @@ while True:
             "val/bpb": val_bpb,
         })
         if _USE_MLFLOW:
-            mlflow.log_metrics({"val_bpb": val_bpb, "total_training_time": total_training_time}, step=step)
+            try:
+                mlflow.log_metrics({"val_bpb": val_bpb, "total_training_time": total_training_time}, step=step)
+            except Exception as e:
+                print0(f"WARNING: MLflow log_metrics failed: {e}")
         model.train()
 
     # once in a while: estimate the CORE metric (all ranks participate)
@@ -488,7 +491,10 @@ while True:
             "centered_results": results["centered_results"],
         })
         if _USE_MLFLOW:
-            mlflow.log_metrics({"core_metric": results["core_metric"]}, step=step)
+            try:
+                mlflow.log_metrics({"core_metric": results["core_metric"]}, step=step)
+            except Exception as e:
+                print0(f"WARNING: MLflow log_metrics failed: {e}")
         model.train()
 
     # once in a while: sample from the model (only on master process)
@@ -620,15 +626,18 @@ while True:
 
     # MLflow: log at adaptive interval (~10 data points minimum)
     if _USE_MLFLOW and step % _mlflow_log_every == 0:
-        mlflow.log_metrics({
-            "train_loss": debiased_smooth_loss,
-            "train_tok_per_sec": tok_per_sec,
-            "train_mfu": mfu,
-            "train_dt_ms": dt * 1000,
-            "train_lr_multiplier": lrm,
-            "total_training_time_min": total_training_time / 60,
-            "eta_min": eta_seconds / 60 if steps_done > 0 else 0,
-        }, step=step)
+        try:
+            mlflow.log_metrics({
+                "train_loss": debiased_smooth_loss,
+                "train_tok_per_sec": tok_per_sec,
+                "train_mfu": mfu,
+                "train_dt_ms": dt * 1000,
+                "train_lr_multiplier": lrm,
+                "total_training_time_min": total_training_time / 60,
+                "eta_min": eta_seconds / 60 if steps_done > 0 else 0,
+            }, step=step)
+        except Exception as e:
+            print0(f"WARNING: MLflow log_metrics failed: {e}")
 
     # state update
     first_step_of_run = (step == 0) or (resuming and step == args.resume_from_step)
@@ -689,7 +698,10 @@ if _USE_MLFLOW:
         final_metrics["final_val_bpb"] = val_bpb
     if "core_metric" in results:
         final_metrics["final_core_metric"] = results["core_metric"]
-    mlflow.log_metrics(final_metrics, step=num_iterations)
-    mlflow.end_run()
+    try:
+        mlflow.log_metrics(final_metrics, step=num_iterations)
+        mlflow.end_run()
+    except Exception as e:
+        print0(f"WARNING: MLflow final logging failed: {e}")
 wandb_run.finish() # wandb run finish
 compute_cleanup()
