@@ -46,9 +46,12 @@ entry_points:
       eval_every:
         type: int
         default: 300            # 7 eval points; each costs ~70s for d10
+      tok_max_chars:
+        type: int
+        default: 200000000      # 200M chars for tokenizer training (default: 2B)
     command: >-
       python -m nanochat.dataset -n {num_data_shards} &&
-      python -m scripts.tok_train --max-chars 200000000 &&
+      python -m scripts.tok_train --max-chars {tok_max_chars} &&
       python -m scripts.base_train
       --depth {depth}
       --num-iterations {num_iterations}
