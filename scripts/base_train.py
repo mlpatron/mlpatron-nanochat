@@ -542,6 +542,13 @@ while True:
             },
             rank=ddp_rank,
         )
+        # Upload checkpoint to MLflow artifacts
+        if _USE_MLFLOW and master_process:
+            try:
+                mlflow.log_artifacts(checkpoint_dir, artifact_path="checkpoint")
+                print0(f"Uploaded checkpoint to MLflow artifacts")
+            except Exception as e:
+                print0(f"Warning: failed to upload checkpoint to MLflow: {e}")
 
     # termination conditions (TODO: possibly also add loss explosions etc.)
     if last_step:
