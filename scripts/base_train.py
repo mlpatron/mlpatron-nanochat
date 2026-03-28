@@ -17,7 +17,15 @@ import gc
 import json
 import time
 import math
+import signal
 import argparse
+
+# Handle SIGTERM (sent by K8s ~30s before spot preemption SIGKILL)
+_preempted = False
+def _sigterm_handler(signum, frame):
+    global _preempted
+    _preempted = True
+signal.signal(signal.SIGTERM, _sigterm_handler)
 from dataclasses import asdict
 from contextlib import contextmanager
 
@@ -552,6 +560,23 @@ while True:
 
     # termination conditions (TODO: possibly also add loss explosions etc.)
     if last_step:
+        break
+    if _preempted:
+        print0("SIGTERM received (spot preemption). Saving checkpoint and exiting...")
+        save_checkpoint(checkpoint_dir, step, orig_model.state_dict(), optimizer.state_dict(),
+            {"step": step, "val_bpb": val_bpb, "model_config": model_config_kwargs,
+             "user_config": user_config, "device_batch_size": args.device_batch_size,
+             "max_seq_len": args.max_seq_len, "total_batch_size": total_batch_size,
+             "dataloader_state_dict": dataloader_state_dict,
+             "loop_state": {"min_val_bpb": min_val_bpb, "smooth_train_loss": smooth_train_loss,
+                            "total_training_time": total_training_time}},
+            rank=ddp_rank)
+        if _USE_MLFLOW and master_process:
+            try:
+                mlflow.log_artifacts(checkpoint_dir, artifact_path="checkpoint")
+                print0(f"Uploaded checkpoint to MLflow artifacts (preemption save)")
+            except Exception as e:
+                print0(f"Warning: failed to upload checkpoint: {e}")
         break
 
     # -------------------------------------------------------------------------
