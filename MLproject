@@ -63,3 +63,53 @@ entry_points:
       --window-pattern L
       --core-metric-every -1
       --sample-every -1
+
+# ---------------------------------------------------------------------------
+# Preset for 1×H100 80GB — d12 reference model with upstream defaults
+#
+# d12 is nanochat's reference model: all hyperparameters are tuned at this
+# scale and the community uses it as the standard baseline.
+#
+# H100 has FA3 → can use upstream default --window-pattern SSSL
+# 80GB VRAM → batch32 fits comfortably (28.8GB peak)
+#
+# Performance (measured on H100 80GB HBM3):
+#   d12 batch32 (L pattern): MFU=46%, step_time=1.0s, peak_mem=28.8GB, val_bpb=0.853
+#   d12 batch32 (SSSL): TBD — expected faster due to sliding window
+# ---------------------------------------------------------------------------
+
+  h100_d12:
+    parameters:
+      depth:
+        type: int
+        default: 12             # reference model (GPT-1 size, 768 dim, ~135M params)
+      num_iterations:
+        type: int
+        default: 2205           # Chinchilla-optimal for d12
+      device_batch_size:
+        type: int
+        default: 32             # 28.8GB peak on H100 80GB
+      max_seq_len:
+        type: int
+        default: 2048           # upstream default
+      num_data_shards:
+        type: int
+        default: 22             # ~1320M tokens, single-epoch for d12 (needs ~1156M)
+      eval_every:
+        type: int
+        default: 250            # upstream default
+      tok_max_chars:
+        type: int
+        default: 2000000000     # upstream default (2B chars)
+    command: >-
+      python -m nanochat.dataset -n {num_data_shards} &&
+      python -m scripts.tok_train --max-chars {tok_max_chars} &&
+      python -m scripts.base_train
+      --depth {depth}
+      --num-iterations {num_iterations}
+      --device-batch-size {device_batch_size}
+      --max-seq-len {max_seq_len}
+      --eval-every {eval_every}
+      --window-pattern SSSL
+      --core-metric-every 2000
+      --sample-every 2000
