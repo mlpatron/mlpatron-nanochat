@@ -94,7 +94,7 @@ entry_points:
         default: 2048           # upstream default
       num_data_shards:
         type: int
-        default: 22             # ~1320M tokens, single-epoch for d12 (needs ~1156M)
+        default: 28             # safe single-epoch for d12 (needs ~1156M, confirmed epoch 2 with 22)
       eval_every:
         type: int
         default: 250            # upstream default
