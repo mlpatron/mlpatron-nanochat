@@ -9,7 +9,7 @@ docker_env:
 # Key relationships:
 #   total_tokens = total_batch_size × num_iterations
 #   total_batch_size is auto-computed by nanochat from depth (524K for d10)
-#   Each data shard ≈ 60M tokens; dataloader loops if data runs out (multi-epoch)
+#   Each data shard ≈ 250M chars ≈ 55-80M tokens (depends on tokenizer compression)
 #
 # Dryrun: MLPatron auto-detects "num_iterations" and suggests
 #   dryrun_override_param=num_iterations, dryrun_override_value=10
@@ -21,7 +21,9 @@ docker_env:
 #   --sample-every -1        skip text generation sampling
 #
 # Performance (measured on A100-SXM4-40GB):
-#   d10: MFU=55%, step_time=1.77s, peak_mem=21.2GB, val_bpb=0.897
+#   d10 batch32: MFU=55%, step_time=1.77s, peak_mem=21.2GB, val_bpb=0.897
+#   d10 batch64: OOM (tried to alloc 8GB, only 697MB free)
+#   Valid device_batch_size values: powers of 2 (total_batch_size must be divisible)
 #   Each eval point costs ~70s; eval_every=300 keeps wall time ≈ 55min.
 # ---------------------------------------------------------------------------
 
@@ -42,7 +44,7 @@ entry_points:
         default: 2048           # same as upstream default
       num_data_shards:
         type: int
-        default: 14             # ~840M tokens, single-epoch for d10 (needs ~786M)
+        default: 18             # ~1080M tokens, safe single-epoch for d10 (needs ~786M)
       eval_every:
         type: int
         default: 300            # 7 eval points; each costs ~70s for d10
