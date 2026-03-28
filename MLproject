@@ -4,50 +4,45 @@ docker_env:
   image: ghcr.io/mlpatron/mlpatron-nanochat:latest
 
 # ---------------------------------------------------------------------------
-# Preset for 1×A100 40GB (~196M params, ~62min, ~$4)
+# d10 on 1×A100 40GB (~62min)
 #
-# Key relationships:
-#   total_tokens = total_batch_size × num_iterations
-#   total_batch_size is auto-computed by nanochat from depth (524K for d10)
-#   Each data shard ≈ 250M chars ≈ 55-80M tokens (depends on tokenizer compression)
-#
-# Dryrun: MLPatron auto-detects "num_iterations" and suggests
-#   dryrun_override_param=num_iterations, dryrun_override_value=10
-#   Use 20 iterations for reliable timing data (includes torch.compile warmup).
-#
-# Hardcoded flags:
-#   --window-pattern L       full-context attention (sliding window needs FA3 / Hopper)
-#   --core-metric-every -1   skip CORE eval (slow, not needed for short runs)
-#   --sample-every -1        skip text generation sampling
+# A100 lacks FA3, so must use --window-pattern L (full-context attention).
+# CORE metric and sampling disabled by default to save time.
 #
 # Performance (measured on A100-SXM4-40GB):
-#   d10 batch32: MFU=55%, step_time=1.77s, peak_mem=21.2GB, val_bpb=0.897
-#   d10 batch64: OOM (tried to alloc 8GB, only 697MB free)
-#   Valid device_batch_size values: powers of 2 (total_batch_size must be divisible)
-#   Each eval point costs ~70s; eval_every=250 (upstream default) → ~62min total.
+#   MFU=55%, step_time=1.77s, peak_mem=21.2GB, val_bpb=0.897, each eval ~70s
 # ---------------------------------------------------------------------------
 
 entry_points:
-  a100_preset:
+  a100_d10:
     parameters:
       depth:
         type: int
-        default: 10             # ~196M params, MFU=53% on A100 40GB
+        default: 10             # ~196M params
       num_iterations:
         type: int
         default: 1500           # ~1.07× Chinchilla-optimal for d10
       device_batch_size:
         type: int
-        default: 32             # MFU 55% on A100 40GB (21 GB peak mem, safe)
+        default: 32             # 21 GB peak mem (batch64 OOMs; must be power of 2)
       max_seq_len:
         type: int
-        default: 2048           # same as upstream default
+        default: 2048           # upstream default
       num_data_shards:
         type: int
-        default: 18             # ~1080M tokens, safe single-epoch for d10 (needs ~786M)
+        default: 18             # safe single-epoch for d10 (needs ~786M tokens)
       eval_every:
         type: int
-        default: 250            # upstream default; ~8 eval points for d10
+        default: 250            # upstream default
+      core_metric_every:
+        type: int
+        default: -1             # disabled (-1); set > 0 to enable periodic CORE eval
+      sample_every:
+        type: int
+        default: -1             # disabled (-1); set > 0 to enable periodic text sampling
+      upload_checkpoint:
+        type: int
+        default: 0              # 1 to upload checkpoints to MLflow artifacts (~2GB, ~10s)
       tok_max_chars:
         type: int
         default: 2000000000     # upstream default (2B chars)
@@ -60,44 +55,55 @@ entry_points:
       --device-batch-size {device_batch_size}
       --max-seq-len {max_seq_len}
       --eval-every {eval_every}
+      --core-metric-every {core_metric_every}
+      --sample-every {sample_every}
+      --upload-checkpoint {upload_checkpoint}
       --window-pattern L
-      --core-metric-every -1
-      --sample-every -1
 
 # ---------------------------------------------------------------------------
-# Preset for 1×H100 80GB — d12 reference model with upstream defaults
+# d12 on 1×H100 80GB (~47min)
 #
-# d12 is nanochat's reference model: all hyperparameters are tuned at this
-# scale and the community uses it as the standard baseline.
+# d12 is nanochat's reference model (GPT-1 size): all hyperparameters are
+# tuned at this scale and the community uses it as the standard baseline.
+# H100 has FA3 → upstream default --window-pattern SSSL.
 #
-# H100 has FA3 → can use upstream default --window-pattern SSSL
-# 80GB VRAM → batch32 fits comfortably (28.8GB peak)
+# core_metric_every and sample_every set to 2500 (> num_iterations 2205),
+# so they only trigger at the final step via the last_step condition.
 #
-# Performance (measured on H100 80GB HBM3):
-#   d12 batch32 (L pattern): MFU=46%, step_time=1.0s, peak_mem=28.8GB, val_bpb=0.853
-#   d12 batch32 (SSSL): TBD — expected faster due to sliding window
+# Performance (measured on H100 80GB HBM3, SSSL):
+#   MFU=42%, step_time=0.96s, peak_mem=28.8GB, val_bpb=0.854
+#   CORE=0.140 (~3min), each eval ~80s
 # ---------------------------------------------------------------------------
 
   h100_d12:
     parameters:
       depth:
         type: int
-        default: 12             # reference model (GPT-1 size, 768 dim, ~135M params)
+        default: 12             # reference model (768 dim, ~135M params)
       num_iterations:
         type: int
         default: 2205           # Chinchilla-optimal for d12
       device_batch_size:
         type: int
-        default: 32             # 28.8GB peak on H100 80GB
+        default: 32             # 28.8 GB peak mem
       max_seq_len:
         type: int
         default: 2048           # upstream default
       num_data_shards:
         type: int
-        default: 28             # safe single-epoch for d12 (needs ~1156M, confirmed epoch 2 with 22)
+        default: 28             # safe single-epoch for d12 (needs ~1156M tokens)
       eval_every:
         type: int
         default: 250            # upstream default
+      core_metric_every:
+        type: int
+        default: 2500           # > 2205 iters, so only triggers at last step
+      sample_every:
+        type: int
+        default: 2500           # > 2205 iters, so only triggers at last step
+      upload_checkpoint:
+        type: int
+        default: 0              # 1 to upload checkpoints to MLflow artifacts (~2GB, ~10s)
       tok_max_chars:
         type: int
         default: 2000000000     # upstream default (2B chars)
@@ -110,6 +116,7 @@ entry_points:
       --device-batch-size {device_batch_size}
       --max-seq-len {max_seq_len}
       --eval-every {eval_every}
+      --core-metric-every {core_metric_every}
+      --sample-every {sample_every}
+      --upload-checkpoint {upload_checkpoint}
       --window-pattern SSSL
-      --core-metric-every 2500
-      --sample-every 2500

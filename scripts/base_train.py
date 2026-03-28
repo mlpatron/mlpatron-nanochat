@@ -88,6 +88,7 @@ parser.add_argument("--eval-tokens", type=int, default=80*524288, help="number o
 parser.add_argument("--core-metric-every", type=int, default=2000, help="evaluate CORE metric every N steps (-1 = disable)")
 parser.add_argument("--core-metric-max-per-task", type=int, default=500, help="examples per task for CORE metric")
 parser.add_argument("--sample-every", type=int, default=2000, help="sample from model every N steps (-1 = disable)")
+parser.add_argument("--upload-checkpoint", type=int, default=0, help="upload checkpoints to MLflow artifacts (0=off, 1=on)")
 parser.add_argument("--save-every", type=int, default=-1, help="save checkpoints every N steps (-1 = only at end)")
 # Output
 parser.add_argument("--model-tag", type=str, default=None, help="override model tag for checkpoint directory name")
@@ -551,7 +552,7 @@ while True:
             rank=ddp_rank,
         )
         # Upload checkpoint to MLflow artifacts
-        if _USE_MLFLOW and master_process:
+        if _USE_MLFLOW and master_process and args.upload_checkpoint:
             try:
                 mlflow.log_artifacts(checkpoint_dir, artifact_path="checkpoint")
                 print0(f"Uploaded checkpoint to MLflow artifacts")
@@ -571,6 +572,7 @@ while True:
              "loop_state": {"min_val_bpb": min_val_bpb, "smooth_train_loss": smooth_train_loss,
                             "total_training_time": total_training_time}},
             rank=ddp_rank)
+        # Always upload on preemption (local storage dies with the pod)
         if _USE_MLFLOW and master_process:
             try:
                 mlflow.log_artifacts(checkpoint_dir, artifact_path="checkpoint")
