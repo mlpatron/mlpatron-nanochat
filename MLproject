@@ -111,5 +111,5 @@ entry_points:
       --max-seq-len {max_seq_len}
       --eval-every {eval_every}
       --window-pattern SSSL
-      --core-metric-every 2000
-      --sample-every 2000
+      --core-metric-every 2500
+      --sample-every 2500
