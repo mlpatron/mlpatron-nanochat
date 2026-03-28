@@ -1,7 +1,7 @@
 name: nanochat
 
 docker_env:
-  image: ghcr.io/nblintao/mlpatron-nanochat:latest
+  image: ghcr.io/mlpatron/mlpatron-nanochat:latest
 
 # ---------------------------------------------------------------------------
 # Preset for 1×A100 40GB (~196M params, ~62min, ~$4)
