@@ -120,3 +120,64 @@ entry_points:
       --sample-every {sample_every}
       --upload-checkpoint {upload_checkpoint}
       --window-pattern SSSL
+
+# ---------------------------------------------------------------------------
+# SFT on 1×H100 80GB (~20min)
+#
+# Supervised fine-tuning: teaches the base model conversation format, tool
+# use (calculator), multiple-choice, and math.  Requires a pretrained base
+# checkpoint — pass its MLflow run ID via pretrain_mlflow_run_id so the job
+# can download the checkpoint artifact.
+#
+# The command pipeline:
+#   1. Download data shards + train tokenizer (deterministic, ~80s)
+#   2. Download pretrain checkpoint from MLflow artifacts
+#   3. Download synthetic identity conversations
+#   4. Run SFT training
+# ---------------------------------------------------------------------------
+
+  h100_d12_sft:
+    parameters:
+      pretrain_mlflow_run_id:
+        type: str                   # MLflow run ID that holds the pretrain checkpoint
+      device_batch_size:
+        type: int
+        default: 32
+      num_iterations:
+        type: int
+        default: -1                 # -1 = full epoch (~1.07M rows)
+      eval_every:
+        type: int
+        default: 200
+      chatcore_every:
+        type: int
+        default: -1                 # disabled by default (slow); set > 0 to enable
+      mmlu_epochs:
+        type: int
+        default: 3
+      gsm8k_epochs:
+        type: int
+        default: 4
+      tok_max_chars:
+        type: int
+        default: 2000000000
+    command: >-
+      python -m nanochat.dataset -n 8 &&
+      python -m scripts.tok_train --max-chars {tok_max_chars} &&
+      python -c "
+      import mlflow, os, shutil;
+      dst = os.path.join(os.path.expanduser('~'), '.cache', 'nanochat', 'base_checkpoints', 'd12');
+      os.makedirs(dst, exist_ok=True);
+      tmp = mlflow.artifacts.download_artifacts(run_id='{pretrain_mlflow_run_id}', artifact_path='checkpoint');
+      [shutil.move(os.path.join(tmp, f), os.path.join(dst, f)) for f in os.listdir(tmp)];
+      print(f'Checkpoint downloaded to {dst}: {os.listdir(dst)}')
+      " &&
+      curl -L -o ~/.cache/nanochat/identity_conversations.jsonl
+      https://karpathy-public.s3.us-west-2.amazonaws.com/identity_conversations.jsonl &&
+      python -m scripts.chat_sft
+      --device-batch-size {device_batch_size}
+      --num-iterations {num_iterations}
+      --eval-every {eval_every}
+      --chatcore-every {chatcore_every}
+      --mmlu-epochs {mmlu_epochs}
+      --gsm8k-epochs {gsm8k_epochs}
