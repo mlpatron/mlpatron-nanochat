@@ -170,7 +170,7 @@ entry_points:
       os.makedirs(dst, exist_ok=True);
       tmp = mlflow.artifacts.download_artifacts(run_id='{pretrain_mlflow_run_id}', artifact_path='checkpoint');
       [shutil.move(os.path.join(tmp, f), os.path.join(dst, f)) for f in os.listdir(tmp)];
-      print(f'Checkpoint downloaded to {dst}: {os.listdir(dst)}')
+      print('Checkpoint downloaded to ' + dst + ': ' + str(os.listdir(dst)))
       " &&
       curl -L -o ~/.cache/nanochat/identity_conversations.jsonl
       https://karpathy-public.s3.us-west-2.amazonaws.com/identity_conversations.jsonl &&
