@@ -168,14 +168,7 @@ entry_points:
     command: >-
       python -m nanochat.dataset -n 8 &&
       python -m scripts.tok_train --max-chars {tok_max_chars} &&
-      python -c "
-      import mlflow, os, shutil;
-      dst = os.path.join(os.path.expanduser('~'), '.cache', 'nanochat', 'base_checkpoints', 'd12');
-      os.makedirs(dst, exist_ok=True);
-      tmp = mlflow.artifacts.download_artifacts(run_id='{pretrain_mlflow_run_id}', artifact_path='checkpoint');
-      [shutil.move(os.path.join(tmp, f), os.path.join(dst, f)) for f in os.listdir(tmp)];
-      print('Checkpoint downloaded to ' + dst + ': ' + str(os.listdir(dst)))
-      " &&
+      python -c "import mlflow, os, shutil; dst = os.path.join(os.path.expanduser('~'), '.cache', 'nanochat', 'base_checkpoints', 'd12'); os.makedirs(dst, exist_ok=True); tmp = mlflow.artifacts.download_artifacts(run_id='{pretrain_mlflow_run_id}', artifact_path='checkpoint'); [shutil.move(os.path.join(tmp, f), os.path.join(dst, f)) for f in os.listdir(tmp)]; print('Checkpoint downloaded to ' + dst + ': ' + str(os.listdir(dst)))" &&
       curl -L -o ~/.cache/nanochat/identity_conversations.jsonl
       https://karpathy-public.s3.us-west-2.amazonaws.com/identity_conversations.jsonl &&
       python -m scripts.chat_sft
