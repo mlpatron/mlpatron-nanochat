@@ -159,6 +159,9 @@ entry_points:
       gsm8k_epochs:
         type: int
         default: 4
+      upload_checkpoint:
+        type: int
+        default: 0              # 1 to upload SFT checkpoints to MLflow artifacts
       tok_max_chars:
         type: int
         default: 2000000000
@@ -182,3 +185,4 @@ entry_points:
       --chatcore-every {chatcore_every}
       --mmlu-epochs {mmlu_epochs}
       --gsm8k-epochs {gsm8k_epochs}
+      --upload-checkpoint {upload_checkpoint}

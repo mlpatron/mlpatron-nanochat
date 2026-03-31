@@ -16,6 +16,9 @@ os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 import time
 import wandb
 import torch
+# MLflow integration (activated when MLFLOW_TRACKING_URI is set, e.g. on MLPatron)
+import mlflow
+_USE_MLFLOW = bool(os.environ.get("MLFLOW_TRACKING_URI"))
 from nanochat.common import compute_init, compute_cleanup, print0, DummyWandb, get_base_dir, autodetect_device_type, get_peak_flops, COMPUTE_DTYPE, COMPUTE_DTYPE_REASON, is_ddp_initialized
 from nanochat.tokenizer import get_token_bytes
 from nanochat.checkpoint_manager import save_checkpoint, load_model, load_optimizer_state
@@ -66,6 +69,8 @@ parser.add_argument("--chatcore-max-sample", type=int, default=24, help="max pro
 # Data mixture
 parser.add_argument("--mmlu-epochs", type=int, default=3, help="number of epochs of MMLU in training mixture (teaches Multiple Choice)")
 parser.add_argument("--gsm8k-epochs", type=int, default=4, help="number of epochs of GSM8K in training mixture (teaches Math and Tool Use)")
+# MLflow
+parser.add_argument("--upload-checkpoint", type=int, default=0, help="upload checkpoints to MLflow artifacts (0=off, 1=on)")
 args = parser.parse_args()
 user_config = vars(args).copy()
 # -----------------------------------------------------------------------------
@@ -85,8 +90,21 @@ else:
     gpu_peak_flops = float('inf')  # MFU not meaningful for CPU/MPS
 
 # wandb logging init
-use_dummy_wandb = args.run == "dummy" or not master_process
+if _USE_MLFLOW and args.run == "dummy":
+    use_dummy_wandb = True
+else:
+    use_dummy_wandb = args.run == "dummy" or not master_process
 wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(project="nanochat-sft", name=args.run, config=user_config)
+
+# MLflow logging init (only on master process)
+if _USE_MLFLOW and master_process:
+    mlflow.start_run(run_id=os.environ.get("MLFLOW_RUN_ID"))
+    mlflow.log_params({k: v for k, v in user_config.items() if v is not None})
+    if device_type == "cuda":
+        mlflow.log_param("gpu_name", torch.cuda.get_device_name(0))
+        mlflow.log_param("gpu_memory_gb", round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 1))
+else:
+    _USE_MLFLOW = False  # disable on non-master ranks
 
 # Flash Attention status
 if not HAS_FA3:
@@ -358,6 +376,8 @@ while True:
             "total_training_time": total_training_time,
             "val/bpb": val_bpb,
         })
+        if _USE_MLFLOW:
+            mlflow.log_metrics({"val_bpb": val_bpb}, step=step)
         model.train()
 
     # once in a while: estimate the ChatCORE metric (all ranks participate)
@@ -420,6 +440,13 @@ while True:
             },
             rank=ddp_rank,
         )
+        # Upload checkpoint to MLflow artifacts
+        if _USE_MLFLOW and master_process and args.upload_checkpoint:
+            try:
+                mlflow.log_artifacts(checkpoint_dir, artifact_path="checkpoint")
+                print0(f"Uploaded checkpoint to MLflow artifacts")
+            except Exception as e:
+                print0(f"Warning: failed to upload checkpoint to MLflow: {e}")
 
     if last_step:
         break
@@ -486,6 +513,12 @@ while True:
             "train/mfu": mfu,
             "train/epoch": current_epoch,
         })
+        if _USE_MLFLOW:
+            mlflow.log_metrics({
+                "train_loss": debiased_smooth_loss,
+                "train_mfu": mfu,
+                "train_tok_per_sec": tok_per_sec,
+            }, step=step)
 
     # The garbage collector spends ~500ms scanning for cycles quite frequently.
     # We manually manage it to avoid these pauses during training.
@@ -515,5 +548,13 @@ get_report().log(section="SFT", data=[
 ])
 
 # cleanup
+if _USE_MLFLOW:
+    mlflow.log_metrics({
+        "total_training_time_min": total_training_time / 60,
+        "peak_memory_mib": get_max_memory() / 1024 / 1024,
+        "min_val_bpb": min_val_bpb,
+        "num_sft_steps": step,
+    })
+    mlflow.end_run()
 wandb_run.finish() # wandb run finish
 compute_cleanup()
